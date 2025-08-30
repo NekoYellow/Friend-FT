@@ -15,21 +15,21 @@ OUTPUT_FILE_PATH = "ft_dataset_filtered.jsonl" # 筛选后输出的精华数据�
 
 # 2. 目标数量
 # 你希望从原始数据中筛选出多少条高质量的样本？
-TARGET_SAMPLE_COUNT = 3000
+TARGET_SAMPLE_COUNT = 7000
 
 # 3. 好友的独特用词 (！！！关键！！！)
 # 列出你好友常用、具有标志性的词语、口头禅或表情符号。
 # 列表越丰富，筛选的针对性越强。
-KEYWORD_LIST = [
-    "xs", "何意", "还真是", "ww", "呜呜", "女人", "感觉", "哎", "个么",
-    "😂", "😅", "🤔"
-]
+KEYWORD_LIST = {
+    "xs": 1, "何意": 3, "还真是": 2, "ww": 3, "呜呜": 3, "女人": 1, "感觉": 3, "哎": 2, "个么": 3,
+    "😂": 1, "😅": 1, "🤔": 2
+}
 
 # 4. 评分权重 (你可以调整不同策略的重要性)
 # 这是启发式筛选的核心，决定了我们如何评价一条数据的好坏。
 WEIGHTS = {
     "split_token": 8,   # 包含 <|split|> 的样本
-    "keywords": 7,      # 每出现一个好友的常用关键词，就加分
+    "keywords": 5,      # 每出现一个好友的常用关键词，就加分
     "length": 9,        # 回复长度在理想范围内，给予奖励
     "context": 2        # 对话历史越长，上下文越丰富，给予奖励
 }
@@ -94,7 +94,7 @@ def score_sample(sample):
         total_score += WEIGHTS["split_token"]
 
     # 3. 关键词评分
-    keyword_count = sum(1 for keyword in KEYWORD_LIST if keyword in last_assistant_reply)
+    keyword_count = sum(v for k, v in KEYWORD_LIST.items() if k in last_assistant_reply)
     total_score += keyword_count * WEIGHTS["keywords"]
 
     # 4. 长度评分
