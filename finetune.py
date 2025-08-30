@@ -34,6 +34,10 @@ lora_config = LoraConfig(
 )
 
 model = get_peft_model(model, lora_config)
+# 手动解冻输入嵌入层和输出LM Head层，让模型能学习新token
+for name, param in model.named_parameters():
+    if 'embed_tokens' in name or 'lm_head' in name:
+        param.requires_grad = True
 model.print_trainable_parameters()
 
 # -------------------------- HACK --------------------------
@@ -107,8 +111,8 @@ dataset = raw_datasets.map(preprocess_and_mask_labels, batched=True, remove_colu
 training_args = TrainingArguments(
     output_dir=ft_model_path,       # 输出目录
     num_train_epochs=3,             # 训练轮次
-    per_device_train_batch_size=1,  # 由于序列更长，减小批次大小
-    gradient_accumulation_steps=8,  # 增加梯度累积步数
+    per_device_train_batch_size=1,  # 批次大小
+    gradient_accumulation_steps=8,  # 梯度累积步数
     optim="adamw_torch",            # 优化器
     learning_rate=2e-4,             # 学习率
     fp16=True,                      # 使用混合精度训练
