@@ -17,7 +17,7 @@ tokenizer = AutoTokenizer.from_pretrained(model_path, trust_remote_code=True)
 model = AutoModelForCausalLM.from_pretrained(
     model_path,
     trust_remote_code=True,
-    torch_dtype=torch.bfloat16,
+    # torch_dtype=torch.bfloat16,
     use_cache=False
 )
 
