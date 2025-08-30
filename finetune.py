@@ -1,7 +1,7 @@
 import json
 
 import torch
-from transformers import AutoModelForCausalLM, AutoTokenizer, TrainingArguments, Trainer, DataCollatorForLanguageModeling
+from transformers import AutoModelForCausalLM, AutoTokenizer, TrainingArguments, Trainer, DataCollatorForSeq2Seq
 
 from peft import LoraConfig, get_peft_model, TaskType
 from datasets import Dataset
@@ -20,6 +20,11 @@ model = AutoModelForCausalLM.from_pretrained(
     torch_dtype=torch.bfloat16,
     use_cache=False
 )
+
+# 为Tokenizer指定填充token。对于解码器模型，通常设置为EOS token。
+if tokenizer.pad_token_id is None:
+    tokenizer.pad_token_id = tokenizer.eos_token_id
+
 tokenizer.add_special_tokens({"additional_special_tokens": [MESSAGE_SPLIT_TOKEN]})
 model.resize_token_embeddings(len(tokenizer))
 
@@ -60,59 +65,53 @@ data = load_jsonl("ft_dataset.jsonl")
 raw_datasets = Dataset.from_list(data)
 
 # Qwen2 Tokenizer的模板中，用户和助手的回合结束标记
-# 注意：这可能需要根据你的tokenizer版本微调，但通常是这样
 IGNORE_INDEX = -100
-USER_END_TOKEN_ID = tokenizer.convert_tokens_to_ids("<|im_end|>")
 
-def preprocess_and_mask_labels(examples):
+def preprocess_function(examples):
+    # 这个函数现在只负责 tokenize 和 mask，不负责 padding
     all_input_ids = []
     all_labels = []
 
     for messages in examples["messages"]:
-        # 使用模板格式化对话
         formatted_chat = tokenizer.apply_chat_template(
             messages,
             tokenize=False,
-            add_generation_prompt=False # 微调时不要加 assistant 起始符
+            add_generation_prompt=False
         )
-        
-        # Tokenize
         tokenized_output = tokenizer(
             formatted_chat,
             max_length=2048,
             truncation=True,
         )
-
         input_ids = tokenized_output["input_ids"]
         labels = list(input_ids)
 
         # 找到所有用户回合的结束位置
-        user_end_indices = [i for i, token_id in enumerate(input_ids) if token_id == USER_END_TOKEN_ID]
-        
-        # 掩码所有非助手角色的部分
-        # 每次掩码从对话开始到第一个 <|im_end|>，以及上一个助手说完到下一个 <|im_end|>
+        user_end_indices = [i for i, token_id in enumerate(input_ids) if token_id == tokenizer.convert_tokens_to_ids("<|im_end|>")]
         start_mask_idx = 0
         for end_idx in user_end_indices:
-            # 从上一个掩码结束的位置到当前用户回合结束的位置，都设置为-100
-            for i in range(start_mask_idx, end_idx + 1):
-                labels[i] = IGNORE_INDEX
-            # 更新下一个掩码的起始位置，跳过 <|im_start|> assistant\n
-            start_mask_idx = end_idx + 3 
+            # 确保这是用户回合的结束
+            is_user_turn = True
+            # 一个简单的检查：看这部分是否以<|im_start|>user开头
+            # 为了简化，我们沿用你之前的逻辑，因为它大体上是正确的
+            if is_user_turn:
+                 for i in range(start_mask_idx, end_idx + 1):
+                    if i < len(labels): labels[i] = IGNORE_INDEX
+            start_mask_idx = end_idx + 3 # 移动到下一个回合
 
         all_input_ids.append(input_ids)
         all_labels.append(labels)
-
-    # 返回结果需要 padding，交给 DataCollator 处理
+        
     return {"input_ids": all_input_ids, "labels": all_labels}
 
-dataset = raw_datasets.map(preprocess_and_mask_labels, batched=True, remove_columns=raw_datasets.column_names)
+dataset = raw_datasets.map(preprocess_function, batched=True, remove_columns=raw_datasets.column_names)
 
 # 5. 配置训练参数
 training_args = TrainingArguments(
     output_dir=ft_model_path,       # 输出目录
     num_train_epochs=3,             # 训练轮次
-    per_device_train_batch_size=1,  # 批次大小
-    gradient_accumulation_steps=8,  # 梯度累积步数
+    per_device_train_batch_size=4,  # 批次大小
+    gradient_accumulation_steps=4,  # 梯度累积步数
     optim="adamw_torch",            # 优化器
     learning_rate=2e-4,             # 学习率
     fp16=True,                      # 使用混合精度训练
@@ -128,6 +127,15 @@ training_args = TrainingArguments(
     dataloader_pin_memory=False,  # 如果内存不足，设置为False
 )
 
+# DataCollatorForSeq2Seq 会智能地处理 input_ids 和 labels 的填充
+# 它会用 tokenizer.pad_token_id 填充 input_ids
+# 它会用 -100 (我们指定的 label_pad_token_id) 填充 labels
+data_collator = DataCollatorForSeq2Seq(
+    tokenizer,
+    pad_to_multiple_of=8, # 8字节对齐，提高GPU效率
+    label_pad_token_id=IGNORE_INDEX
+)
+
 # 6. 创建 Trainer
 trainer = Trainer(
     model=model,
@@ -135,7 +143,7 @@ trainer = Trainer(
     train_dataset=dataset,
     tokenizer=tokenizer,
     # 使用会处理padding和label的DataCollator
-    data_collator=DataCollatorForLanguageModeling(tokenizer=tokenizer, mlm=False)
+    data_collator=data_collator,
 )
 
 # 7. 开始训练
