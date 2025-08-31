@@ -67,37 +67,50 @@ raw_datasets = Dataset.from_list(data)
 # Qwen2 Tokenizer的模板中，用户和助手的回合结束标记
 IGNORE_INDEX = -100
 
-def preprocess_function(examples):
-    # 这个函数现在只负责 tokenize 和 mask，不负责 padding
+def preprocess_function(examples, max_seq_len=2048):
     all_input_ids = []
     all_labels = []
 
+    # 获取模板中各个角色的起始和结束 token ID
+    im_start_token_id = tokenizer.convert_tokens_to_ids("<|im_start|>")
+    im_end_token_id = tokenizer.convert_tokens_to_ids("<|im_end|>")
+    
     for messages in examples["messages"]:
-        formatted_chat = tokenizer.apply_chat_template(
-            messages,
-            tokenize=False,
-            add_generation_prompt=False
-        )
-        tokenized_output = tokenizer(
-            formatted_chat,
-            max_length=2048,
-            truncation=True,
-        )
-        input_ids = tokenized_output["input_ids"]
-        labels = list(input_ids)
+        # Tokenize a temporary version to identify roles
+        # We don't use the full template here, just enough to find the assistant parts
+        input_ids = []
+        labels = []
+        
+        # Manually apply template logic to control masking
+        for msg in messages:
+            role = msg["role"]
+            content = msg["content"]
+            
+            # Tokenize role-specific header and content
+            # The template is roughly: <|im_start|>role\ncontent<|im_end|>
+            # Note: The exact newline and space might vary slightly, but this is the general structure
+            role_tokens = [im_start_token_id] + tokenizer.encode(f"{role}\n", add_special_tokens=False)
+            content_tokens = tokenizer.encode(content, add_special_tokens=False)
+            end_tokens = [im_end_token_id]
 
-        # 找到所有用户回合的结束位置
-        user_end_indices = [i for i, token_id in enumerate(input_ids) if token_id == tokenizer.convert_tokens_to_ids("<|im_end|>")]
-        start_mask_idx = 0
-        for end_idx in user_end_indices:
-            # 确保这是用户回合的结束
-            is_user_turn = True
-            # 一个简单的检查：看这部分是否以<|im_start|>user开头
-            # 为了简化，我们沿用你之前的逻辑，因为它大体上是正确的
-            if is_user_turn:
-                 for i in range(start_mask_idx, end_idx + 1):
-                    if i < len(labels): labels[i] = IGNORE_INDEX
-            start_mask_idx = end_idx + 3 # 移动到下一个回合
+            # Combine tokens for this turn
+            turn_tokens = role_tokens + content_tokens + end_tokens
+            
+            # Mask based on role
+            if role == "user" or role == "system":
+                # Mask the entire turn if it's from the user or system
+                turn_labels = [IGNORE_INDEX] * len(turn_tokens)
+            else: # assistant
+                # For the assistant, mask only the role header, not the content
+                turn_labels = [IGNORE_INDEX] * len(role_tokens) + content_tokens + end_tokens
+
+            input_ids.extend(turn_tokens)
+            labels.extend(turn_labels)
+
+        # Truncate if necessary
+        if len(input_ids) > max_seq_len:
+            input_ids = input_ids[:max_seq_len]
+            labels = labels[:max_seq_len]
 
         all_input_ids.append(input_ids)
         all_labels.append(labels)
