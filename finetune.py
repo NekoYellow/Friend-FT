@@ -123,8 +123,8 @@ dataset = raw_datasets.map(preprocess_function, batched=True, remove_columns=raw
 training_args = TrainingArguments(
     output_dir=ft_model_path,       # 输出目录
     num_train_epochs=3,             # 训练轮次
-    per_device_train_batch_size=4,  # 批次大小
-    gradient_accumulation_steps=4,  # 梯度累积步数
+    per_device_train_batch_size=2,  # 批次大小
+    gradient_accumulation_steps=8,  # 梯度累积步数
     optim="paged_adamw_8bit",       # 优化器
     learning_rate=5e-5,             # 学习率
     fp16=True,                      # 使用混合精度训练
