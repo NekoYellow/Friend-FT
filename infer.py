@@ -25,7 +25,7 @@ model.config.pad_token_id = tokenizer.pad_token_id
 # -----------------------------------------
 
 messages = [
-    {"role": "user", "content": "在干嘛\n相似"}
+    {"role": "user", "content": "在干嘛"}
 ]
 
 input_ids = tokenizer.apply_chat_template(
