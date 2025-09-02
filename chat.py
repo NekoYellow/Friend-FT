@@ -45,7 +45,7 @@ print("Type 'exit' or 'quit' to end the conversation.")
 print("-" * 30)
 
 # --- 3. 主聊天循环 ---
-messages = [{"role": "system", "content": SYSTEM_PROMPT}]
+messages = []
 
 while True:
     try:
