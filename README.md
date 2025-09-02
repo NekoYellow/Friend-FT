@@ -68,6 +68,4 @@
 
 ### 对话效果
 
-```
-
-```
+<img width="512" alt="chat" src="https://github.com/user-attachments/assets/1b284f90-ac30-48ca-9188-d3309dfadfda" />
